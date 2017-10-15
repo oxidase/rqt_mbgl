@@ -1,5 +1,7 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.1)
 project(rqt_mbgl)
+
+include(CheckIncludeFiles)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -13,13 +15,10 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 ## System dependencies are found with CMake's conventions
-
 if("${qt_gui_cpp_USE_QT_MAJOR_VERSION} " STREQUAL "5 ")
   find_package(Qt5Widgets REQUIRED)
 else()
-  ## TODO: check and add a error message
-  find_package(Qt4 COMPONENTS QtCore QtGui REQUIRED)
-  include(${QT_USE_FILE})
+  message(FATAL_ERROR "Qt v5 is required")
 endif()
 
 ## Uncomment this if the package has a setup.py. This macro ensures
@@ -117,29 +116,45 @@ catkin_package(
 )
 
 
-set (rqt_example_cpp_SRCS
+set (rqt_mbgl_SRCS
+  src/mbgl_map_window.cpp
   src/mbgl_plugin.cpp
 )
 
-set(rqt_example_cpp_HDRS
+set(rqt_mbgl_HDRS
+  include/mbgl_map_window.h
   include/mbgl_plugin.h
 )
 
-set(rqt_example_cpp_UIS
+set(rqt_mbgl_UIS
   src/mbgl_plugin.ui
 )
 
 if("${qt_gui_cpp_USE_QT_MAJOR_VERSION} " STREQUAL "5 ")
-  qt5_wrap_cpp(rqt_example_cpp_MOCS ${rqt_example_cpp_HDRS})
-  qt5_wrap_ui(rqt_example_cpp_UIS_H ${rqt_example_cpp_UIS})
+  qt5_wrap_cpp(rqt_mbgl_MOCS ${rqt_mbgl_HDRS})
+  qt5_wrap_ui(rqt_mbgl_UIS_H ${rqt_mbgl_UIS})
 else()
-  qt4_wrap_cpp(rqt_example_cpp_MOCS ${rqt_example_cpp_HDRS})
-  qt4_wrap_ui(rqt_example_cpp_UIS_H ${rqt_example_cpp_UIS})
+  qt4_wrap_cpp(rqt_mbgl_MOCS ${rqt_mbgl_HDRS})
+  qt4_wrap_ui(rqt_mbgl_UIS_H ${rqt_mbgl_UIS})
 endif()
 
 ###########
 ## Build ##
 ###########
+
+## Configure qmapboxgl library
+add_library(qmapboxgl SHARED IMPORTED)
+set(MAPBOX_GL_PATH "$ENV{HOME}/mapbox-gl-native" CACHE PATH "Path to a local repository https://github.com/mapbox/mapbox-gl-native/")
+find_path(MAPBOX_GL_INCLUDE_DIR QMapboxGL "${MAPBOX_GL_PATH}/platform/qt/include" DOC "Path to a Mapbox GL Qt include directory")
+find_library(MAPBOX_GL_LIBRARY qmapboxgl "${MAPBOX_GL_PATH}/build" DOC "Path to a Mapbox GL Qt library")
+if(NOT MAPBOX_GL_INCLUDE_DIR OR NOT MAPBOX_GL_LIBRARY)
+  message(FATAL_ERROR "QMapboxGL library not found")
+endif()
+
+set_target_properties(qmapboxgl PROPERTIES
+  IMPORTED_LOCATION "${MAPBOX_GL_LIBRARY}"
+  INTERFACE_INCLUDE_DIRECTORIES "${MAPBOX_GL_INCLUDE_DIR}"
+)
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
@@ -151,20 +166,21 @@ include_directories(
 
 ## Declare a cpp library
 add_library(${PROJECT_NAME}
-    ${rqt_example_cpp_SRCS}
-    ${rqt_example_cpp_MOCS}
-    ${rqt_example_cpp_UIS_H}
+    ${rqt_mbgl_SRCS}
+    ${rqt_mbgl_MOCS}
+    ${rqt_mbgl_UIS_H}
     )
 
 ## Declare a C++ executable
-# add_executable(rqt_example_cpp_node src/rqt_example_cpp_node.cpp)
+# add_executable(rqt_mbgl_node src/rqt_mbgl_node.cpp)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
-# add_dependencies(rqt_example_cpp_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+# add_dependencies(rqt_mbgl_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(${PROJECT_NAME}
+  qmapboxgl
   ${catkin_LIBRARIES}
 )
 
@@ -189,11 +205,11 @@ endif()
 # )
 
 ## Mark executables and/or libraries for installation
-# install(TARGETS rqt_example_cpp rqt_example_cpp_node
-#   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-#   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-#   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
+install(TARGETS ${PROJECT_NAME}
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
 
 ## Mark cpp header files for installation
 # install(DIRECTORY include/${PROJECT_NAME}/
@@ -214,7 +230,7 @@ endif()
 #############
 
 ## Add gtest based cpp test target and link libraries
-# catkin_add_gtest(${PROJECT_NAME}-test test/test_rqt_example_cpp.cpp)
+# catkin_add_gtest(${PROJECT_NAME}-test test/test_rqt_mbgl.cpp)
 # if(TARGET ${PROJECT_NAME}-test)
 #   target_link_libraries(${PROJECT_NAME}-test ${PROJECT_NAME})
 # endif()
