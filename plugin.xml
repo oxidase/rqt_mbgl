@@ -1,0 +1,20 @@
+<library path="lib/librqt_mbgl">
+  <class name="rqt_vector/MapboxGLPlugin" type="rqt_mbgl::MapboxGLPlugin" base_class_type="rqt_gui_cpp::Plugin">
+    <description>
+      An example C++ Mapbox GL Native plugin.
+    </description>
+    <qtgui>
+      <!-- optional grouping...
+      <group>
+        <label>Group</label>
+      </group>
+      <group>
+        <label>Subgroup</label>
+      </group>
+      -->
+      <label>Mapbox GL Native</label>
+      <icon type="theme">system-help</icon>
+      <statustip>Mapbox GL Native plugin for rendering vector tiles.</statustip>
+    </qtgui>
+  </class>
+</library>
