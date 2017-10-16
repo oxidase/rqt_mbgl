@@ -34,6 +34,11 @@ QMapboxGL& MapboxGLMapWindow::getMap() const
     return *m_map;
 }
 
+std::mutex& MapboxGLMapWindow::getMapLock()
+{
+    return map_lock;
+}
+
 void MapboxGLMapWindow::selfTest()
 {
     if (m_bearingAnimation) {
@@ -356,7 +361,7 @@ void MapboxGLMapWindow::mousePressEvent(QMouseEvent *ev)
 
 void MapboxGLMapWindow::mouseMoveEvent(QMouseEvent *ev)
 {
-    ROS_INFO("mouseMoveEvent");
+    ROS_INFO("mouseMoveEvent %g %g", m_map->pitch(), m_map->bearing());
 
 #if QT_VERSION < 0x050000
     QPointF delta = ev->posF() - m_lastPos;

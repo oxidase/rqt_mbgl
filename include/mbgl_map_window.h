@@ -9,6 +9,8 @@
 
 #include <QMapboxGL>
 
+#include <mutex>
+
 class QKeyEvent;
 class QMouseEvent;
 class QWheelEvent;
@@ -23,6 +25,7 @@ public:
     void selfTest();
 
     QMapboxGL& getMap() const;
+    std::mutex& getMapLock();
 
 protected slots:
     void animationValueChanged();
@@ -48,6 +51,7 @@ private:
 
     QMapboxGLSettings m_settings;
     QScopedPointer<QMapboxGL> m_map;
+    std::mutex map_lock;
 
     QPropertyAnimation *m_bearingAnimation;
     QPropertyAnimation *m_zoomAnimation;
@@ -60,7 +64,6 @@ private:
     QVariant m_fillAnnotationId;
 
     bool m_sourceAdded = false;
-
 
     std::size_t currentStyleIndex = 0;
     QList<QPair<QString, QString> > styles;

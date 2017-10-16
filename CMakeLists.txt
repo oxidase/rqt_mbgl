@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   rqt_gui
   rqt_gui_cpp
   std_msgs
+  gps_common
 )
 
 ## System dependencies are found with CMake's conventions
