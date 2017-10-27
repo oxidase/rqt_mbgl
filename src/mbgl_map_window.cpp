@@ -17,6 +17,7 @@
 
 int kAnimationDuration = 10000;
 
+const QString layer3Dbuildings = QString::fromLatin1("3d-buildings");
 
 MapboxGLMapWindow::MapboxGLMapWindow(const QMapboxGLSettings &settings)
     : m_settings(settings), currentStyleIndex(0)
@@ -89,12 +90,60 @@ void MapboxGLMapWindow::changeStyle()
 
 void MapboxGLMapWindow::keyPressEvent(QKeyEvent *ev)
 {
-    ROS_INFO("keyPressEvent %d", ev->key());
+    // ROS_INFO("keyPressEvent %d", ev->key());
 
     switch (ev->key()) {
     case Qt::Key_S:
         changeStyle();
         break;
+    case Qt::Key_E:
+
+        if (!m_map->layerExists(layer3Dbuildings))
+        {
+            // Buildings extrusion
+            QVariantMap buildings;
+            buildings["id"] = layer3Dbuildings;
+            buildings["source"] = "composite";
+            buildings["source-layer"] = "building";
+            buildings["type"] = "fill-extrusion";
+            buildings["minzoom"] = 15.0;
+            m_map->addLayer(buildings);
+
+            QVariantList buildingsFilterExpression;
+            buildingsFilterExpression.append("==");
+            buildingsFilterExpression.append("extrude");
+            buildingsFilterExpression.append("true");
+
+            QVariantList buildingsFilter;
+            buildingsFilter.append(buildingsFilterExpression);
+
+            m_map->setFilter(layer3Dbuildings, buildingsFilterExpression);
+
+            m_map->setPaintProperty(layer3Dbuildings, "fill-extrusion-color", "#aaa");
+            m_map->setPaintProperty(layer3Dbuildings, "fill-extrusion-opacity", .6);
+
+            QVariantMap extrusionHeight;
+            extrusionHeight["type"] = "identity";
+            extrusionHeight["property"] = "height";
+
+            m_map->setPaintProperty(layer3Dbuildings, "fill-extrusion-height", extrusionHeight);
+
+            QVariantMap extrusionBase;
+            extrusionBase["type"] = "identity";
+            extrusionBase["property"] = "min_height";
+
+            m_map->setPaintProperty(layer3Dbuildings, "fill-extrusion-base", extrusionBase);
+
+            m_3dbuildings = true;
+        }
+        else
+        {
+            m_3dbuildings = !m_3dbuildings;
+            m_map->setLayoutProperty(layer3Dbuildings, "visibility", m_3dbuildings ? "visible" : "none");
+        }
+
+        break;
+
     case Qt::Key_L: {
             if (m_sourceAdded) {
                 return;
@@ -361,7 +410,7 @@ void MapboxGLMapWindow::mousePressEvent(QMouseEvent *ev)
 
 void MapboxGLMapWindow::mouseMoveEvent(QMouseEvent *ev)
 {
-    ROS_INFO("mouseMoveEvent %g %g", m_map->pitch(), m_map->bearing());
+    // ROS_INFO("mouseMoveEvent %g %g", m_map->pitch(), m_map->bearing());
 
 #if QT_VERSION < 0x050000
     QPointF delta = ev->posF() - m_lastPos;
@@ -408,7 +457,7 @@ void MapboxGLMapWindow::wheelEvent(QWheelEvent *ev)
 
 void MapboxGLMapWindow::initializeGL()
 {
-    ROS_INFO("initializeGL");
+    // ROS_INFO("initializeGL");
 
     m_map.reset(new QMapboxGL(nullptr, m_settings, size(), pixelRatio()));
     connect(m_map.data(), SIGNAL(needsRendering()), this, SLOT(update()));
@@ -440,7 +489,7 @@ bool MapboxGLMapWindow::event(QEvent *e)
 {
     switch (e->type()) {
     case QEvent::WindowChangeInternal:
-        ROS_INFO("m_map.reset()");
+        // ROS_INFO("m_map.reset()");
         m_map.reset();
         break;
     }

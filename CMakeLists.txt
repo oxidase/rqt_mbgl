@@ -131,12 +131,18 @@ set(rqt_mbgl_UIS
   src/mbgl_plugin.ui
 )
 
+set(rqt_mbgl_RESOURCES
+  resources/common.qrc
+)
+
 if("${qt_gui_cpp_USE_QT_MAJOR_VERSION} " STREQUAL "5 ")
   qt5_wrap_cpp(rqt_mbgl_MOCS ${rqt_mbgl_HDRS})
   qt5_wrap_ui(rqt_mbgl_UIS_H ${rqt_mbgl_UIS})
+  qt5_add_resources(rqt_mbgl_RESOURCES_RCC ${rqt_mbgl_RESOURCES})
 else()
   qt4_wrap_cpp(rqt_mbgl_MOCS ${rqt_mbgl_HDRS})
   qt4_wrap_ui(rqt_mbgl_UIS_H ${rqt_mbgl_UIS})
+  qt4_add_resources(rqt_mbgl_RESOURCES_RCC ${rqt_mbgl_RESOURCES})
 endif()
 
 ###########
@@ -170,6 +176,7 @@ add_library(${PROJECT_NAME}
     ${rqt_mbgl_SRCS}
     ${rqt_mbgl_MOCS}
     ${rqt_mbgl_UIS_H}
+    ${rqt_mbgl_RESOURCES_RCC}
     )
 
 ## Declare a C++ executable

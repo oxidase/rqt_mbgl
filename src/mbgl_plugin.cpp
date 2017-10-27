@@ -56,8 +56,14 @@ void MapboxGLPlugin::initPlugin(qt_gui_cpp::PluginContext& context)
     // Access standalone command line arguments
     QStringList argv = context.argv();
     ROS_INFO("argv has %d items", argv.size());
-    for (auto s : argv) {
+    for (auto s : argv)
+    {
         ROS_INFO("   %s", s.toLatin1().data());
+    }
+
+    if (!getenv("MAPBOX_ACCESS_TOKEN"))
+    {
+        ROS_ERROR("MAPBOX_ACCESS_TOKEN is not defined. Please set a token from https://www.mapbox.com/studio/account/tokens/");
     }
 
     QMapboxGLSettings settings;

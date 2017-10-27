@@ -53,6 +53,8 @@ private:
     QScopedPointer<QMapboxGL> m_map;
     std::mutex map_lock;
 
+    bool m_3dbuildings = false;
+
     QPropertyAnimation *m_bearingAnimation;
     QPropertyAnimation *m_zoomAnimation;
 
