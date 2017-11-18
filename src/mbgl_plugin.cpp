@@ -44,8 +44,10 @@ namespace rqt_mbgl
 
 MapboxGLPlugin::MapboxGLPlugin()
     : rqt_gui_cpp::Plugin()
-    , widget(0), nh("~")
+    , widget(nullptr)
+    , nh("~")
 {
+    std::cout << "MapboxGLPlugin" << "\n";
     setObjectName("MapboxGLPlugin");
 }
 
@@ -89,38 +91,18 @@ void MapboxGLPlugin::shutdownPlugin()
 void MapboxGLPlugin::saveSettings(qt_gui_cpp::Settings& plugin_settings,
                                   qt_gui_cpp::Settings& instance_settings) const
 {
-    std::lock_guard<std::mutex> lock(widget->getMapLock());
-
-    auto &map = widget->getMap();
-
-    instance_settings.setValue("latitude", map.latitude());
-    instance_settings.setValue("longitude", map.longitude());
-    instance_settings.setValue("zoom", map.zoom());
-    instance_settings.setValue("bearing", map.bearing());
-    instance_settings.setValue("pitch", map.pitch());
-    instance_settings.setValue("styleUrl", map.styleUrl());
-    instance_settings.setValue("scale", map.scale());
+    widget->saveSettings(instance_settings);
 }
 
 void MapboxGLPlugin::restoreSettings(const qt_gui_cpp::Settings& plugin_settings,
                                      const qt_gui_cpp::Settings& instance_settings)
 {
-    std::lock_guard<std::mutex> lock(widget->getMapLock());
-
-    auto &map = widget->getMap();
-
-    map.setStyleUrl(instance_settings.value("styleUrl", "mapbox://styles/mapbox/streets-v10").toString());
-    map.setZoom(instance_settings.value("zoom", 14).toDouble());
-    map.setBearing(instance_settings.value("bearing", 0).toDouble());
-    map.setPitch(instance_settings.value("pitch", 0).toDouble());
-    map.setScale(instance_settings.value("scale", 16384).toDouble());
-    map.setLatitude(instance_settings.value("latitude", 48.13727).toDouble());
-    map.setLongitude(instance_settings.value("longitude", 11.575506).toDouble());
+    widget->restoreSettings(instance_settings);
 }
 
 bool MapboxGLPlugin::hasConfiguration() const
 {
-  return false;
+    return false;
 }
 
 void MapboxGLPlugin::triggerConfiguration()
@@ -133,21 +115,32 @@ void MapboxGLPlugin::extended_fix_callback(const gps_common::GPSFix& fix)
     const auto distance = computeDistance(fix, previous_fix);
     const auto bearing = computeBearing(fix, previous_fix);
 
-    std::lock_guard<std::mutex> lock(widget->getMapLock());
+    if (distance < 10)
+        return;
 
-    auto &map = widget->getMap();
+    std::cout << previous_fix.time << " " << fix.time << "\n";
 
-    map.setLatitude(fix.latitude);
-    map.setLongitude(fix.longitude);
-    map.setZoom(18);
-    map.setPitch(60);
+    QMetaObject::invokeMethod(widget, "flyTo", Qt::QueuedConnection, Q_ARG(double, fix.latitude), Q_ARG(double, fix.longitude), Q_ARG(double, bearing));
 
-    //map.setScale(instance_settings.value("scale", 16384).toDouble());
+    //std::cout << "map " << map.bearing() << " " << map.latitude() << " " << map.longitude() << "\n";
+    //widget->flyTo({40,40},30);
+    //widget->flyTo({fix.latitude, fix.longitude}, bearing);
 
-    if (distance > 0.1)
-    {
-        map.setBearing(bearing);
-    }
+    //map.jumpTo(QMapboxGLCameraOptions{QPointF{fix.latitude, fix.longitude}, QPointF{400, 400}, 15, bearing, 30});
+    //map.jumpTo(QMapboxGLCameraOptions{QPointF{fix.latitude, fix.longitude}, QPointF{0, 0}, 15, 0, 30});
+
+    //map.setLatitude(fix.latitude);
+    //map.setLongitude(fix.longitude);
+    //widget->placeCar({fix.latitude, fix.longitude}, bearing);
+
+    // std::cout << fix.latitude << " " << fix.longitude << " " << bearing << "\n";
+
+    // //map.setScale(instance_settings.value("scale", 16384).toDouble());
+
+    // if (distance > 0.1)
+    // {
+    //     //map.setBearing(bearing);
+    // }
 
     previous_fix = fix;
 }

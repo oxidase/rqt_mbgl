@@ -20,7 +20,9 @@ int kAnimationDuration = 10000;
 const QString layer3Dbuildings = QString::fromLatin1("3d-buildings");
 
 MapboxGLMapWindow::MapboxGLMapWindow(const QMapboxGLSettings &settings)
-    : m_settings(settings), currentStyleIndex(0)
+    : m_map(nullptr)
+    , m_mapboxGLSettings(settings)
+    , m_currentStyleIndex(0)
 {
     styles = QMapbox::defaultStyles();
     const auto user_style = qgetenv("MAPBOX_STYLE_URL");
@@ -28,30 +30,33 @@ MapboxGLMapWindow::MapboxGLMapWindow(const QMapboxGLSettings &settings)
     {
         styles.insert(0, {"User style", user_style});
     }
+
+    for (auto x : styles)
+        std::cout << x.first.toLatin1().constData() << " " << x.second.toLatin1().constData() << "\n";
 }
 
-QMapboxGL& MapboxGLMapWindow::getMap() const
+void MapboxGLMapWindow::flyTo(double latitude, double longitude, double bearing)
 {
-    return *m_map;
-}
+    std::lock_guard<std::mutex> lock(m_flyToMutex);
 
-std::mutex& MapboxGLMapWindow::getMapLock()
-{
-    return map_lock;
-}
-
-void MapboxGLMapWindow::selfTest()
-{
-    if (m_bearingAnimation) {
-        m_bearingAnimation->setDuration(kAnimationDuration);
-        m_bearingAnimation->setEndValue(m_map->bearing() + 360 * 4);
-        m_bearingAnimation->start();
+    if (m_latitudeAnimation) {
+        m_latitudeAnimation->setDuration(kAnimationDuration);
+        m_latitudeAnimation->setEndValue(latitude);
+        m_latitudeAnimation->start();
     }
+    if (m_longitudeAnimation) {
+        m_longitudeAnimation->setDuration(kAnimationDuration);
+        m_longitudeAnimation->setEndValue(longitude);
+        m_longitudeAnimation->start();
+    }
+    if (m_bearingAnimation) {
+        auto diff = std::fmod(bearing - m_map->bearing(), 360.);
+        if (diff > 180) diff -= 360.;
 
-    if (m_zoomAnimation) {
-        m_zoomAnimation->setDuration(kAnimationDuration);
-        m_zoomAnimation->setEndValue(m_map->zoom() + 3);
-        m_zoomAnimation->start();
+        std::cout << m_map->bearing() << " -> " << bearing << " diff " << diff << "\n";
+        m_bearingAnimation->setDuration(kAnimationDuration);
+        m_bearingAnimation->setEndValue(m_map->bearing() + diff);
+        m_bearingAnimation->start();
     }
 }
 
@@ -65,83 +70,313 @@ qreal MapboxGLMapWindow::pixelRatio() {
 #endif
 }
 
-
 void MapboxGLMapWindow::animationFinished()
 {
-    qDebug() << "Animation ticks/s: " <<  m_animationTicks / static_cast<float>(kAnimationDuration) * 1000.;
-    qDebug() << "Frame draws/s: " <<  m_frameDraws / static_cast<float>(kAnimationDuration) * 1000.;
-
-    qApp->quit();
+    ROS_INFO("Animation ticks/s: %f", m_animationTicks / static_cast<float>(kAnimationDuration) * 1000.);
+    ROS_INFO("Frame draws/s: %f", m_frameDraws / static_cast<float>(kAnimationDuration) * 1000.);
 }
 
-void MapboxGLMapWindow::animationValueChanged()
+void MapboxGLMapWindow::animationValueChanged(const QVariant& value)
 {
+    std::cout << "value = " << value.toDouble() << "\n";
     m_animationTicks++;
 }
 
-void MapboxGLMapWindow::changeStyle()
+void MapboxGLMapWindow::resetNorth()
 {
-    m_map->setStyleUrl(styles[currentStyleIndex].first);
-    setWindowTitle(QString("Mapbox GL: ") + styles[currentStyleIndex].second);
-    currentStyleIndex = (currentStyleIndex + 1) % styles.size();
+    m_map->setBearing(0);
+    m_map->setPitch(0);
+}
 
-    m_sourceAdded = false;
+void MapboxGLMapWindow::setStyle(std::size_t style)
+{
+    m_currentStyleIndex = style % styles.size();
+    m_map->setStyleUrl(styles[m_currentStyleIndex].first);
+    setWindowTitle(QString("Mapbox GL: ") + styles[m_currentStyleIndex].second);
+}
+
+void MapboxGLMapWindow::toggleBuildingsExtrusion()
+{
+    if (!m_map->layerExists(layer3Dbuildings))
+    {
+        QVariantMap buildings;
+        buildings["id"] = layer3Dbuildings;
+        buildings["source"] = "composite";
+        buildings["source-layer"] = "building";
+        buildings["type"] = "fill-extrusion";
+        buildings["minzoom"] = 15.0;
+        m_map->addLayer(buildings);
+
+        QVariantList buildingsFilterExpression;
+        buildingsFilterExpression.append("==");
+        buildingsFilterExpression.append("extrude");
+        buildingsFilterExpression.append("true");
+
+        QVariantList buildingsFilter;
+        buildingsFilter.append(buildingsFilterExpression);
+
+        m_map->setFilter(layer3Dbuildings, buildingsFilterExpression);
+
+        m_map->setPaintProperty(layer3Dbuildings, "fill-extrusion-color", "#aaa");
+        m_map->setPaintProperty(layer3Dbuildings, "fill-extrusion-opacity", .6);
+
+        QVariantMap extrusionHeight;
+        extrusionHeight["type"] = "identity";
+        extrusionHeight["property"] = "height";
+
+        m_map->setPaintProperty(layer3Dbuildings, "fill-extrusion-height", extrusionHeight);
+
+        QVariantMap extrusionBase;
+        extrusionBase["type"] = "identity";
+        extrusionBase["property"] = "min_height";
+
+        m_map->setPaintProperty(layer3Dbuildings, "fill-extrusion-base", extrusionBase);
+
+        m_3dbuildings = true;
+    }
+    else
+    {
+        m_3dbuildings = !m_3dbuildings;
+        m_map->setLayoutProperty(layer3Dbuildings, "visibility", m_3dbuildings ? "visible" : "none");
+    }
+}
+
+void MapboxGLMapWindow::placeCar(const QMapbox::Coordinate &position, double bearing)
+{
+    QMapbox::CoordinatesCollections point { { { position } } };
+    QMapbox::Feature carPoint { QMapbox::Feature::PointType, point, {}, {} };
+
+    QVariantMap carPosition;
+    carPosition["data"] = QVariant::fromValue<QMapbox::Feature>(carPoint);
+    if (!m_map->sourceExists("carPosition"))
+    {
+        carPosition["type"] = "geojson";
+        m_map->addSource("carPosition", carPosition);
+    }
+    else
+    {
+        m_map->updateSource("carPosition", carPosition);
+    }
+
+    if (!m_map->layerExists("carSymbol"))
+    {
+        m_map->addImage("car-icon", QImage(":car-icon.svg"));
+
+        QVariantMap carSymbol;
+        carSymbol["id"] = "carSymbol";
+        carSymbol["type"] = "symbol";
+        carSymbol["source"] = "carPosition";
+        m_map->addLayer(carSymbol);
+
+        m_map->setLayoutProperty("carSymbol", "icon-image", "car-icon");
+        m_map->setLayoutProperty("carSymbol", "icon-rotation-alignment", "map");
+    }
+
+    m_map->setLayoutProperty("carSymbol", "icon-rotate", bearing);
+    m_map->setLayoutProperty("carSymbol", "icon-size", std::pow(2., m_map->zoom() - 18.));
+}
+
+void MapboxGLMapWindow::toggleCar()
+{
+    if (m_map->layerExists("carSymbol"))
+    {
+        m_carVisible = !m_carVisible;
+        std::cout << "m_carVisible " << m_carVisible << "\n";
+        m_map->setLayoutProperty("carSymbol", "visibility", m_carVisible ? "visible" : "none");
+    }
+}
+
+void MapboxGLMapWindow::initializeGL()
+{
+    ROS_INFO("initializeGL");
+
+    if (!m_map)
+    {
+        std::lock_guard<std::mutex> lock(m_settings_lock);
+        m_map = new QMapboxGL(nullptr, m_mapboxGLSettings, size(), pixelRatio());
+        setStyle(m_currentStyleIndex);
+        connect(m_map, SIGNAL(needsRendering()), this, SLOT(update()));
+
+        m_latitudeAnimation.reset(new QPropertyAnimation(m_map, "latitude"));
+        m_longitudeAnimation.reset(new QPropertyAnimation(m_map, "longitude"));
+        m_bearingAnimation.reset(new QPropertyAnimation(m_map, "bearing"));
+        connect(m_bearingAnimation.data(), SIGNAL(finished()), this, SLOT(animationFinished()));
+        connect(m_bearingAnimation.data(), SIGNAL(valueChanged(const QVariant&)), this, SLOT(animationValueChanged(const QVariant&)));
+
+        connect(m_map, SIGNAL(mapChanged(QMapboxGL::MapChange)), this, SLOT(onMapChanged(QMapboxGL::MapChange)));
+    }
+}
+
+void MapboxGLMapWindow::paintGL()
+{
+    m_frameDraws++;
+#if QT_VERSION >= 0x050400
+    // When we're using QOpenGLWidget, we need to tell Mapbox GL about the framebuffer we're using.
+    m_map->setFramebufferObject(defaultFramebufferObject());
+#endif
+    m_map->render();
+}
+
+void MapboxGLMapWindow::resizeGL(int w, int h)
+{
+    QSize size(w, h);
+    m_map->resize(size, size * pixelRatio());
+}
+
+void MapboxGLMapWindow::saveSettings(qt_gui_cpp::Settings &settings) const
+{
+    std::lock_guard<std::mutex> lock(m_settings_lock);
+
+    settings.setValue("styleIndex", QVariant::fromValue(m_currentStyleIndex));
+
+    if (m_map)
+    {
+        settings.setValue("latitude", m_map->latitude());
+        settings.setValue("longitude", m_map->longitude());
+        settings.setValue("zoom", m_map->zoom());
+        settings.setValue("bearing", m_map->bearing());
+        settings.setValue("pitch", m_map->pitch());
+    }
+    else
+    {
+        settings.setValue("latitude", m_mapboxGLCameraOptions.center.value<QMapbox::Coordinate>().first);
+        settings.setValue("longitude", m_mapboxGLCameraOptions.center.value<QMapbox::Coordinate>().second);
+        settings.setValue("zoom", m_mapboxGLCameraOptions.zoom);
+        settings.setValue("bearing", m_mapboxGLCameraOptions.angle);
+        settings.setValue("pitch", m_mapboxGLCameraOptions.pitch);
+    }
+}
+
+void MapboxGLMapWindow::restoreSettings(const qt_gui_cpp::Settings &settings)
+{
+    std::lock_guard<std::mutex> lock(m_settings_lock);
+
+    m_currentStyleIndex = settings.value("styleIndex", 0).toUInt();
+
+    m_mapboxGLCameraOptions = {
+        QVariant::fromValue(QMapbox::Coordinate(settings.value("latitude", 48.13727).toDouble(),
+                                                settings.value("longitude", 11.575506).toDouble())),
+        {0, 0},
+        settings.value("zoom", 14).toDouble(),
+        settings.value("bearing", 0).toDouble(),
+        settings.value("pitch", 0).toDouble()
+    };
+
+    // Update the map
+    m_map->jumpTo(m_mapboxGLCameraOptions);
+    setStyle(m_currentStyleIndex);
+}
+
+bool MapboxGLMapWindow::event(QEvent *e)
+{
+    switch (e->type()) {
+    case QEvent::WindowChangeInternal:
+        if (m_map)
+        {
+            std::lock_guard<std::mutex> lock(m_settings_lock);
+            m_mapboxGLCameraOptions = {
+                QVariant::fromValue(m_map->coordinate()),
+                {0, 0},
+                m_map->zoom(),
+                m_map->bearing(),
+                m_map->pitch()};
+            m_map = nullptr;
+        };
+        break;
+    }
+
+    return QOpenGLWidget::event(e);
+}
+
+void MapboxGLMapWindow::onMapChanged(QMapboxGL::MapChange change)
+{
+    switch (change)
+    {
+    case QMapboxGL::MapChangeRegionWillChange:
+        //std::cout << "zoom " << m_map->zoom() << "\n";
+        //placeCar(m_currentCarPosition, m_currentCarBearing);
+        break;
+    default:
+        //std::cout << "MapboxGLMapWindow::mapChanged " << change << "\n";
+        break;
+    }
 }
 
 void MapboxGLMapWindow::keyPressEvent(QKeyEvent *ev)
 {
     // ROS_INFO("keyPressEvent %d", ev->key());
 
-    switch (ev->key()) {
-    case Qt::Key_S:
-        changeStyle();
+    switch (ev->key())
+    {
+        /*
+    case Qt::Key_Up:
+        m_currentCarPosition.first += 0.001;
+        placeCar(m_currentCarPosition, 0);
         break;
+    case Qt::Key_Down:
+        m_currentCarPosition.first -= 0.001;
+        placeCar(m_currentCarPosition, 0);
+        break;
+    case Qt::Key_Right:
+        m_currentCarPosition.second += 0.001;
+        placeCar(m_currentCarPosition, 0);
+        break;
+    case Qt::Key_Left:
+        m_currentCarPosition.second -= 0.001;
+        placeCar(m_currentCarPosition, 0);
+        break;
+        */
+    case Qt::Key_T:
+        flyTo(40,40,0);
+        break;
+
+    case Qt::Key_X:
+        resetNorth();
+        break;
+
+    case Qt::Key_S:
+        setStyle(m_currentStyleIndex + 1);
+        break;
+
     case Qt::Key_E:
+        toggleBuildingsExtrusion();
+        break;
 
-        if (!m_map->layerExists(layer3Dbuildings))
+    case Qt::Key_Z:
+
+        if (!m_map->sourceExists("circleSource"))
         {
-            // Buildings extrusion
-            QVariantMap buildings;
-            buildings["id"] = layer3Dbuildings;
-            buildings["source"] = "composite";
-            buildings["source-layer"] = "building";
-            buildings["type"] = "fill-extrusion";
-            buildings["minzoom"] = 15.0;
-            m_map->addLayer(buildings);
+            QMapbox::CoordinatesCollections point { { { {48.13727, 11.575506} } } };
+            QMapbox::Feature feature { QMapbox::Feature::PointType, point, {}, {} };
 
-            QVariantList buildingsFilterExpression;
-            buildingsFilterExpression.append("==");
-            buildingsFilterExpression.append("extrude");
-            buildingsFilterExpression.append("true");
+            QVariantMap circleSource;
+            circleSource["type"] = "geojson";
+            circleSource["data"] = QVariant::fromValue<QMapbox::Feature>(feature);
+            m_map->addSource("circleSource", circleSource);
 
-            QVariantList buildingsFilter;
-            buildingsFilter.append(buildingsFilterExpression);
+            QVariantMap circle;
+            circle["id"] = "circleLayer";
+            circle["type"] = "circle";
+            circle["source"] = "circleSource";
+            m_map->addLayer(circle);
 
-            m_map->setFilter(layer3Dbuildings, buildingsFilterExpression);
-
-            m_map->setPaintProperty(layer3Dbuildings, "fill-extrusion-color", "#aaa");
-            m_map->setPaintProperty(layer3Dbuildings, "fill-extrusion-opacity", .6);
-
-            QVariantMap extrusionHeight;
-            extrusionHeight["type"] = "identity";
-            extrusionHeight["property"] = "height";
-
-            m_map->setPaintProperty(layer3Dbuildings, "fill-extrusion-height", extrusionHeight);
-
-            QVariantMap extrusionBase;
-            extrusionBase["type"] = "identity";
-            extrusionBase["property"] = "min_height";
-
-            m_map->setPaintProperty(layer3Dbuildings, "fill-extrusion-base", extrusionBase);
-
-            m_3dbuildings = true;
+            m_map->setPaintProperty("circleLayer", "circle-radius", 10.0);
+            m_map->setPaintProperty("circleLayer", "circle-color", QColor("black"));
         }
         else
         {
-            m_3dbuildings = !m_3dbuildings;
-            m_map->setLayoutProperty(layer3Dbuildings, "visibility", m_3dbuildings ? "visible" : "none");
-        }
+            QMapbox::CoordinatesCollections point { { { {48.13727, 11.577506} } } };
+            QMapbox::Feature feature { QMapbox::Feature::PointType, point, {}, {} };
 
+            QVariantMap circleSource;
+            circleSource["data"] = QVariant::fromValue<QMapbox::Feature>(feature);
+            m_map->updateSource("circleSource", circleSource);
+
+        }
+        break;
+
+    case Qt::Key_C:
+        toggleCar();
         break;
 
     case Qt::Key_L: {
@@ -161,6 +396,7 @@ void MapboxGLMapWindow::keyPressEvent(QKeyEvent *ev)
             QVariantMap routeSource;
             routeSource["type"] = "geojson";
             routeSource["data"] = geojson.readAll();
+            std::cout << geojson.readAll().constData() << "\n";
             m_map->addSource("routeSource", routeSource);
 
             // The route case, painted before the route
@@ -393,7 +629,7 @@ void MapboxGLMapWindow::mousePressEvent(QMouseEvent *ev)
 
     if (ev->type() == QEvent::MouseButtonPress) {
         if (ev->buttons() == (Qt::LeftButton | Qt::RightButton)) {
-            changeStyle();
+            //changeStyle();
         }
     }
 
@@ -453,46 +689,4 @@ void MapboxGLMapWindow::wheelEvent(QWheelEvent *ev)
 
     m_map->scaleBy(1 + factor, ev->pos());
     ev->accept();
-}
-
-void MapboxGLMapWindow::initializeGL()
-{
-    // ROS_INFO("initializeGL");
-
-    m_map.reset(new QMapboxGL(nullptr, m_settings, size(), pixelRatio()));
-    connect(m_map.data(), SIGNAL(needsRendering()), this, SLOT(update()));
-
-    m_bearingAnimation = new QPropertyAnimation(m_map.data(), "bearing");
-    m_zoomAnimation = new QPropertyAnimation(m_map.data(), "zoom");
-
-    connect(m_zoomAnimation, SIGNAL(finished()), this, SLOT(animationFinished()));
-    connect(m_zoomAnimation, SIGNAL(valueChanged(const QVariant&)), this, SLOT(animationValueChanged()));
-}
-
-void MapboxGLMapWindow::paintGL()
-{
-    m_frameDraws++;
-#if QT_VERSION >= 0x050400
-    // When we're using QOpenGLWidget, we need to tell Mapbox GL about the framebuffer we're using.
-    m_map->setFramebufferObject(defaultFramebufferObject());
-#endif
-    m_map->render();
-}
-
-void MapboxGLMapWindow::resizeGL(int w, int h)
-{
-    QSize size(w, h);
-    m_map->resize(size, size * pixelRatio());
-}
-
-bool MapboxGLMapWindow::event(QEvent *e)
-{
-    switch (e->type()) {
-    case QEvent::WindowChangeInternal:
-        // ROS_INFO("m_map.reset()");
-        m_map.reset();
-        break;
-    }
-
-    return QOpenGLWidget::event(e);
 }

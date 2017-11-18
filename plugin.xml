@@ -4,16 +4,13 @@
       An example C++ Mapbox GL Native plugin.
     </description>
     <qtgui>
-      <!-- optional grouping...
       <group>
-        <label>Group</label>
+        <label>Visualization</label>
+        <icon type="theme">folder</icon>
+        <statustip>Plugins related to visualization.</statustip>
       </group>
-      <group>
-        <label>Subgroup</label>
-      </group>
-      -->
       <label>Mapbox GL Native</label>
-      <icon type="theme">system-help</icon>
+      <icon type="file">resources/mb/mb-icon.png</icon>
       <statustip>Mapbox GL Native plugin for rendering vector tiles.</statustip>
     </qtgui>
   </class>

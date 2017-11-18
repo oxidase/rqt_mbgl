@@ -6,5 +6,6 @@
         <file>source2.geojson</file>
         <file>label-arrow.svg</file>
         <file>label-background.svg</file>
+        <file alias="car-icon.svg">car_icon_top.svg</file>
     </qresource>
 </RCC>

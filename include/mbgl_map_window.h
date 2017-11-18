@@ -9,6 +9,8 @@
 
 #include <QMapboxGL>
 
+#include <qt_gui_cpp/settings.h>
+
 #include <mutex>
 
 class QKeyEvent;
@@ -22,18 +24,25 @@ class MapboxGLMapWindow : public QOpenGLWidget
 public:
     MapboxGLMapWindow(const QMapboxGLSettings &);
 
-    void selfTest();
+    void saveSettings(qt_gui_cpp::Settings &settings) const;
+    void restoreSettings(const qt_gui_cpp::Settings &settings);
 
-    QMapboxGL& getMap() const;
-    std::mutex& getMapLock();
+    void placeCar(const QMapbox::Coordinate &position, double bearing);
+
+public slots:
+    void flyTo(double latitude, double longitude, double bearing);
 
 protected slots:
-    void animationValueChanged();
+    void animationValueChanged(const QVariant& value);
     void animationFinished();
 
 private:
-    void changeStyle();
     qreal pixelRatio();
+
+    void resetNorth();
+    void setStyle(std::size_t style);
+    void toggleBuildingsExtrusion();
+    void toggleCar();
 
     // QWidget implementation.
     void keyPressEvent(QKeyEvent *ev) final;
@@ -47,16 +56,25 @@ private:
     void resizeGL(int w, int h);
     bool event(QEvent *e);
 
-    QPointF m_lastPos;
+    // Here must be QScopedPointer<QMapboxGL> instead of a naked pointer
+    // Memory leak here is intentional as Mapbox GL clears global context
+    QMapboxGL *m_map;
 
-    QMapboxGLSettings m_settings;
-    QScopedPointer<QMapboxGL> m_map;
-    std::mutex map_lock;
+    mutable std::mutex m_settings_lock;
+    QMapboxGLSettings m_mapboxGLSettings;
+    QMapboxGLCameraOptions m_mapboxGLCameraOptions;
+    std::size_t m_currentStyleIndex;
 
     bool m_3dbuildings = false;
 
-    QPropertyAnimation *m_bearingAnimation;
-    QPropertyAnimation *m_zoomAnimation;
+    bool m_carVisible = false;
+
+    QPointF m_lastPos;
+
+    std::mutex m_flyToMutex;
+    QScopedPointer<QPropertyAnimation> m_latitudeAnimation;
+    QScopedPointer<QPropertyAnimation> m_longitudeAnimation;
+    QScopedPointer<QPropertyAnimation> m_bearingAnimation;
 
     unsigned m_animationTicks = 0;
     unsigned m_frameDraws = 0;
@@ -67,8 +85,10 @@ private:
 
     bool m_sourceAdded = false;
 
-    std::size_t currentStyleIndex = 0;
     QList<QPair<QString, QString> > styles;
+
+private slots:
+    void onMapChanged(QMapboxGL::MapChange change);
 };
 
 #endif

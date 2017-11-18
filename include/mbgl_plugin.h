@@ -8,6 +8,8 @@
 #include <ros/node_handle.h>
 #include <gps_common/GPSFix.h>
 
+#include <mutex>
+
 namespace rqt_mbgl
 {
 
@@ -29,6 +31,8 @@ public:
     void triggerConfiguration() override;
 
 private:
+    // Here is a naked pointer with a potential memory leak to prevent Python error
+    // RuntimeError: wrapped C/C++ object of type WindowChangedSignaler has been deleted
     MapboxGLMapWindow *widget;
 
     ros::NodeHandle nh;
