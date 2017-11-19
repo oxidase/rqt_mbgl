@@ -9,6 +9,7 @@
 
 #include <QMapboxGL>
 
+#include <ros/node_handle.h>
 #include <qt_gui_cpp/settings.h>
 
 #include <mutex>
@@ -40,7 +41,7 @@ private:
     qreal pixelRatio();
 
     void resetNorth();
-    void setStyle(std::size_t style);
+    void setStyle(int style);
     void toggleBuildingsExtrusion();
     void toggleCar();
     void findRoute(const QMapbox::Coordinate &from, const QMapbox::Coordinate &to);
@@ -66,6 +67,8 @@ private:
     QMapboxGLCameraOptions m_mapboxGLCameraOptions;
     std::size_t m_currentStyleIndex;
 
+    ros::NodeHandle nh;
+
     bool m_3dbuildings = false;
 
     bool m_carVisible = false;
@@ -85,7 +88,7 @@ private:
 
     bool m_sourceAdded = false;
 
-    QList<QPair<QString, QString> > styles;
+    QList<QPair<QString, QString> > m_styles;
 
     QMapbox::Coordinate m_routeStart;
     QMapbox::Coordinate m_routeDestination;

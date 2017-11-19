@@ -14,7 +14,6 @@
 #endif
 
 #include <ros/console.h>
-#include <ros/node_handle.h>
 #include <rosrm/RouteService.h>
 #include <rosrm/MatchService.h>
 #include <rosrm/Overview.h>
@@ -28,15 +27,22 @@ MapboxGLMapWindow::MapboxGLMapWindow(const QMapboxGLSettings &settings)
     , m_mapboxGLSettings(settings)
     , m_currentStyleIndex(0)
 {
-    styles = QMapbox::defaultStyles();
+    m_styles = QMapbox::defaultStyles();
     const auto user_style = qgetenv("MAPBOX_STYLE_URL");
     if (!user_style.isEmpty())
     {
-        styles.insert(0, {"User style", user_style});
+        m_styles.insert(0, {user_style, "User style"});
     }
 
-    for (auto x : styles)
-        std::cout << x.first.toLatin1().constData() << " " << x.second.toLatin1().constData() << "\n";
+    const auto user_styles = qgetenv("MAPBOX_STYLE_URLS");
+    if (!user_styles.isEmpty())
+    {
+        for (const auto &style : user_styles.split(';'))
+        {
+            const auto &name_url = style.split('=');
+            m_styles.insert(0, {name_url.size() == 2 ? name_url[1] : name_url[0], name_url.size() == 2 ? name_url[0] : "User style"});
+        }
+    }
 }
 
 void MapboxGLMapWindow::flyTo(double latitude, double longitude, double bearing)
@@ -98,11 +104,11 @@ void MapboxGLMapWindow::resetNorth()
     m_map->setPitch(0);
 }
 
-void MapboxGLMapWindow::setStyle(std::size_t style)
+void MapboxGLMapWindow::setStyle(int style)
 {
-    m_currentStyleIndex = style % styles.size();
-    m_map->setStyleUrl(styles[m_currentStyleIndex].first);
-    setWindowTitle(QString("Mapbox GL: ") + styles[m_currentStyleIndex].second);
+    m_currentStyleIndex = style % m_styles.size() + (style < 0 ? m_styles.size() : 0);
+    m_map->setStyleUrl(m_styles[m_currentStyleIndex].first);
+    setWindowTitle(QString("Mapbox GLX: ") + m_styles[m_currentStyleIndex].second);
 }
 
 void MapboxGLMapWindow::toggleBuildingsExtrusion()
@@ -204,7 +210,6 @@ void MapboxGLMapWindow::initializeGL()
     {
         std::lock_guard<std::mutex> lock(m_settings_lock);
         m_map = new QMapboxGL(nullptr, m_mapboxGLSettings, size(), pixelRatio());
-        setStyle(m_currentStyleIndex);
         connect(m_map, SIGNAL(needsRendering()), this, SLOT(update()));
 
         m_latitudeAnimation.reset(new QPropertyAnimation(m_map, "latitude"));
@@ -352,7 +357,7 @@ void MapboxGLMapWindow::keyPressEvent(QKeyEvent *ev)
         break;
 
     case Qt::Key_S:
-        setStyle(m_currentStyleIndex + 1);
+        setStyle(m_currentStyleIndex + ((ev->modifiers() & Qt::ShiftModifier) ? -1 : 1));
         break;
 
     case Qt::Key_E:
@@ -724,7 +729,6 @@ void MapboxGLMapWindow::findRoute(const QMapbox::Coordinate &from, const QMapbox
 {
     ROS_INFO("Find route from %g,%g to %g,%g", from.first, from.second, to.first, to.second);
 
-    ros::NodeHandle nh;
     ros::ServiceClient router = nh.serviceClient<rosrm::RouteService::Request, rosrm::RouteService::Response>("/rosrm_server/route");
 
     rosrm::RouteService::Request request;
