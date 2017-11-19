@@ -18,9 +18,39 @@
 #include <rosrm/MatchService.h>
 #include <rosrm/Overview.h>
 
-int kAnimationDuration = 10000;
-
 const QString layer3Dbuildings = QString::fromLatin1("3d-buildings");
+
+namespace
+{
+const constexpr double DEGREE_TO_RAD = M_PI / 180.;
+const constexpr double RAD_TO_DEGREE = 180. / M_PI;
+const constexpr double EARTH_RADIUS = 6371008.8; // IUGG  mean radius (2a+b)/3
+
+double computeDistance(const QMapbox::Coordinate& from, const QMapbox::Coordinate &to)
+{
+    // Use haversine formula
+    const auto lat1 = from.first * DEGREE_TO_RAD;
+    const auto lng1 = from.second * DEGREE_TO_RAD;
+    const auto lat2 = to.first * DEGREE_TO_RAD;
+    const auto lng2 = to.second * DEGREE_TO_RAD;
+    const auto dlng = lng1 - lng2;
+    const auto dlat = lat1 - lat2;
+    const auto aharv = std::pow(std::sin(dlat / 2.0), 2.0) +
+                         std::cos(lat1) * std::cos(lat2) * std::pow(std::sin(dlng / 2.), 2);
+    const auto charv = 2. * std::atan2(std::sqrt(aharv), std::sqrt(1.0 - aharv));
+    return EARTH_RADIUS * charv;
+}
+
+double computeBearing(const QMapbox::Coordinate& from, const QMapbox::Coordinate &to)
+{
+    const auto lng_delta = (to.second - from.second) * DEGREE_TO_RAD;
+    const auto lat1 = from.first * DEGREE_TO_RAD;
+    const auto lat2 = to.first * DEGREE_TO_RAD;
+    const auto y = std::sin(lng_delta) * std::cos(lat2);
+    const auto x = std::cos(lat1) * std::sin(lat2) - std::sin(lat1) * std::cos(lat2) * std::cos(lng_delta);
+    return std::atan2(y, x) * RAD_TO_DEGREE;
+}
+}
 
 MapboxGLMapWindow::MapboxGLMapWindow(const QMapboxGLSettings &settings)
     : m_map(nullptr)
@@ -45,34 +75,37 @@ MapboxGLMapWindow::MapboxGLMapWindow(const QMapboxGLSettings &settings)
     }
 }
 
-void MapboxGLMapWindow::flyTo(double latitude, double longitude, double bearing)
+void MapboxGLMapWindow::jumpTo(const QMapbox::Coordinate &to, double bearing)
 {
-    std::cout << "fly to " << latitude << " " <<longitude << " " << bearing << " " << m_mapboxGLCameraOptions.pitch.toDouble() << " " << m_mapboxGLCameraOptions.zoom.toDouble() << " " << m_mapboxGLCameraOptions.anchor.toPointF().x() << "," << m_mapboxGLCameraOptions.anchor.toPointF().y() <<  "\n";
-    m_mapboxGLCameraOptions.center = QVariant::fromValue(QMapbox::Coordinate(latitude, longitude));
+    m_mapboxGLCameraOptions.center = QVariant::fromValue(to);
     m_mapboxGLCameraOptions.angle = bearing;
     m_mapboxGLCameraOptions.zoom = m_map->zoom();
     m_mapboxGLCameraOptions.pitch = m_map->pitch();
     m_map->jumpTo(m_mapboxGLCameraOptions);
+}
 
-    return ;
-    if (m_latitudeAnimation) {
-        m_latitudeAnimation->setDuration(kAnimationDuration);
-        m_latitudeAnimation->setEndValue(latitude);
+void MapboxGLMapWindow::flyTo(const QMapbox::Coordinate &to, double bearing, int duration)
+{
+    if (m_latitudeAnimation)
+    {
+        m_latitudeAnimation->setDuration(duration);
+        m_latitudeAnimation->setEndValue(to.first);
         m_latitudeAnimation->start();
     }
     if (m_longitudeAnimation) {
-        m_longitudeAnimation->setDuration(kAnimationDuration);
-        m_longitudeAnimation->setEndValue(longitude);
+        m_longitudeAnimation->setDuration(duration);
+        m_longitudeAnimation->setEndValue(to.second);
         m_longitudeAnimation->start();
     }
-    if (m_bearingAnimation) {
-        auto diff = std::fmod(bearing - m_map->bearing(), 360.);
-        if (diff > 180) diff -= 360.;
+    if (m_bearingAnimation)
+    {
+         auto diff = std::fmod(bearing - m_map->bearing(), 360.);
+         if (diff > +180) diff -= 360.;
+         if (diff < -180) diff += 360.;
 
-        std::cout << m_map->bearing() << " -> " << bearing << " diff " << diff << "\n";
-        m_bearingAnimation->setDuration(kAnimationDuration);
-        m_bearingAnimation->setEndValue(m_map->bearing() + diff);
-        m_bearingAnimation->start();
+         m_bearingAnimation->setDuration(duration);
+         m_bearingAnimation->setEndValue(m_map->bearing() + diff);
+         m_bearingAnimation->start();
     }
 }
 
@@ -88,13 +121,12 @@ qreal MapboxGLMapWindow::pixelRatio() {
 
 void MapboxGLMapWindow::animationFinished()
 {
-    ROS_INFO("Animation ticks/s: %f", m_animationTicks / static_cast<float>(kAnimationDuration) * 1000.);
-    ROS_INFO("Frame draws/s: %f", m_frameDraws / static_cast<float>(kAnimationDuration) * 1000.);
+    // ROS_INFO("Animation ticks/s: %f", m_animationTicks / static_cast<float>(kAnimationDuration) * 1000.);
+    // ROS_INFO("Frame draws/s: %f", m_frameDraws / static_cast<float>(kAnimationDuration) * 1000.);
 }
 
 void MapboxGLMapWindow::animationValueChanged(const QVariant& value)
 {
-    std::cout << "value = " << value.toDouble() << "\n";
     m_animationTicks++;
 }
 
@@ -108,7 +140,7 @@ void MapboxGLMapWindow::setStyle(int style)
 {
     m_currentStyleIndex = style % m_styles.size() + (style < 0 ? m_styles.size() : 0);
     m_map->setStyleUrl(m_styles[m_currentStyleIndex].first);
-    setWindowTitle(QString("Mapbox GLX: ") + m_styles[m_currentStyleIndex].second);
+    setWindowTitle(QString("Mapbox GL: ") + m_styles[m_currentStyleIndex].second);
 }
 
 void MapboxGLMapWindow::toggleBuildingsExtrusion()
@@ -190,16 +222,6 @@ void MapboxGLMapWindow::placeCar(const QMapbox::Coordinate &position, double bea
 
     m_map->setLayoutProperty("carSymbol", "icon-rotate", bearing);
     m_map->setLayoutProperty("carSymbol", "icon-size", std::pow(2., m_map->zoom() - 18.));
-}
-
-void MapboxGLMapWindow::toggleCar()
-{
-    if (m_map->layerExists("carSymbol"))
-    {
-        m_carVisible = !m_carVisible;
-        std::cout << "m_carVisible " << m_carVisible << "\n";
-        m_map->setLayoutProperty("carSymbol", "visibility", m_carVisible ? "visible" : "none");
-    }
 }
 
 void MapboxGLMapWindow::initializeGL()
@@ -308,48 +330,20 @@ void MapboxGLMapWindow::onMapChanged(QMapboxGL::MapChange change)
     switch (change)
     {
     case QMapboxGL::MapChangeRegionWillChange:
-        //std::cout << "zoom " << m_map->zoom() << "\n";
-        //placeCar(m_currentCarPosition, m_currentCarBearing);
         break;
     default:
-        //std::cout << "MapboxGLMapWindow::mapChanged " << change << "\n";
         break;
     }
 }
 
 void MapboxGLMapWindow::keyPressEvent(QKeyEvent *ev)
 {
-    // ROS_INFO("keyPressEvent %d", ev->key());
-
     switch (ev->key())
     {
-        /*
-    case Qt::Key_Up:
-        m_currentCarPosition.first += 0.001;
-        placeCar(m_currentCarPosition, 0);
-        break;
-    case Qt::Key_Down:
-        m_currentCarPosition.first -= 0.001;
-        placeCar(m_currentCarPosition, 0);
-        break;
-    case Qt::Key_Right:
-        m_currentCarPosition.second += 0.001;
-        placeCar(m_currentCarPosition, 0);
-        break;
-    case Qt::Key_Left:
-        m_currentCarPosition.second -= 0.001;
-        placeCar(m_currentCarPosition, 0);
-        break;
-        */
-
     case Qt::Key_R:
         m_routeStart = {48.295211667, 11.894606667};
         m_routeDestination = {48.177228333, 11.589738333};
         findRoute(m_routeStart, m_routeDestination);
-        break;
-
-    case Qt::Key_T:
-        flyTo(40,40,0);
         break;
 
     case Qt::Key_X:
@@ -364,273 +358,6 @@ void MapboxGLMapWindow::keyPressEvent(QKeyEvent *ev)
         toggleBuildingsExtrusion();
         break;
 
-    case Qt::Key_Z:
-
-        if (!m_map->sourceExists("circleSource"))
-        {
-            QMapbox::CoordinatesCollections point { { { {48.13727, 11.575506} } } };
-            QMapbox::Feature feature { QMapbox::Feature::PointType, point, {}, {} };
-
-            QVariantMap circleSource;
-            circleSource["type"] = "geojson";
-            circleSource["data"] = QVariant::fromValue<QMapbox::Feature>(feature);
-            m_map->addSource("circleSource", circleSource);
-
-            QVariantMap circle;
-            circle["id"] = "circleLayer";
-            circle["type"] = "circle";
-            circle["source"] = "circleSource";
-            m_map->addLayer(circle);
-
-            m_map->setPaintProperty("circleLayer", "circle-radius", 10.0);
-            m_map->setPaintProperty("circleLayer", "circle-color", QColor("black"));
-        }
-        else
-        {
-            QMapbox::CoordinatesCollections point { { { {48.13727, 11.577506} } } };
-            QMapbox::Feature feature { QMapbox::Feature::PointType, point, {}, {} };
-
-            QVariantMap circleSource;
-            circleSource["data"] = QVariant::fromValue<QMapbox::Feature>(feature);
-            m_map->updateSource("circleSource", circleSource);
-
-        }
-        break;
-
-    case Qt::Key_C:
-        toggleCar();
-        break;
-
-    case Qt::Key_L: {
-            if (m_sourceAdded) {
-                return;
-            }
-
-            m_sourceAdded = true;
-
-            // Not in all styles, but will work on streets
-            QString before = "waterway-label";
-
-            QFile geojson(":source1.geojson");
-            geojson.open(QIODevice::ReadOnly);
-
-            // The data source for the route line and markers
-            QVariantMap routeSource;
-            routeSource["type"] = "geojson";
-            routeSource["data"] = geojson.readAll();
-            std::cout << geojson.readAll().constData() << "\n";
-            m_map->addSource("routeSource", routeSource);
-
-            // The route case, painted before the route
-            QVariantMap routeCase;
-            routeCase["id"] = "routeCase";
-            routeCase["type"] = "line";
-            routeCase["source"] = "routeSource";
-            m_map->addLayer(routeCase, before);
-
-            m_map->setPaintProperty("routeCase", "line-color", QColor("white"));
-            m_map->setPaintProperty("routeCase", "line-width", 20.0);
-            m_map->setLayoutProperty("routeCase", "line-join", "round");
-            m_map->setLayoutProperty("routeCase", "line-cap", "round");
-
-            // The route, painted on top of the route case
-            QVariantMap route;
-            route["id"] = "route";
-            route["type"] = "line";
-            route["source"] = "routeSource";
-            m_map->addLayer(route, before);
-
-            m_map->setPaintProperty("route", "line-color", QColor("blue"));
-            m_map->setPaintProperty("route", "line-width", 8.0);
-            m_map->setLayoutProperty("route", "line-join", "round");
-            m_map->setLayoutProperty("route", "line-cap", "round");
-
-            QVariantList lineDashArray;
-            lineDashArray.append(1);
-            lineDashArray.append(2);
-
-            m_map->setPaintProperty("route", "line-dasharray", lineDashArray);
-
-            // Markers at the beginning and end of the route
-            m_map->addImage("label-arrow", QImage(":label-arrow.svg"));
-            m_map->addImage("label-background", QImage(":label-background.svg"));
-
-            QVariantMap markerArrow;
-            markerArrow["id"] = "markerArrow";
-            markerArrow["type"] = "symbol";
-            markerArrow["source"] = "routeSource";
-            m_map->addLayer(markerArrow);
-
-            m_map->setLayoutProperty("markerArrow", "icon-image", "label-arrow");
-            m_map->setLayoutProperty("markerArrow", "icon-size", 0.5);
-            m_map->setLayoutProperty("markerArrow", "icon-ignore-placement", true);
-
-            QVariantList arrowOffset;
-            arrowOffset.append(0.0);
-            arrowOffset.append(-15.0);
-            m_map->setLayoutProperty("markerArrow", "icon-offset", arrowOffset);
-
-            QVariantMap markerBackground;
-            markerBackground["id"] = "markerBackground";
-            markerBackground["type"] = "symbol";
-            markerBackground["source"] = "routeSource";
-            m_map->addLayer(markerBackground);
-
-            m_map->setLayoutProperty("markerBackground", "icon-image", "label-background");
-            m_map->setLayoutProperty("markerBackground", "text-field", "{name}");
-            m_map->setLayoutProperty("markerBackground", "icon-text-fit", "both");
-            m_map->setLayoutProperty("markerBackground", "icon-ignore-placement", true);
-            m_map->setLayoutProperty("markerBackground", "text-ignore-placement", true);
-            m_map->setLayoutProperty("markerBackground", "text-anchor", "left");
-            m_map->setLayoutProperty("markerBackground", "text-size", 16.0);
-            m_map->setLayoutProperty("markerBackground", "text-padding", 0.0);
-            m_map->setLayoutProperty("markerBackground", "text-line-height", 1.0);
-            m_map->setLayoutProperty("markerBackground", "text-max-width", 8.0);
-
-            QVariantList iconTextFitPadding;
-            iconTextFitPadding.append(15.0);
-            iconTextFitPadding.append(10.0);
-            iconTextFitPadding.append(15.0);
-            iconTextFitPadding.append(10.0);
-            m_map->setLayoutProperty("markerBackground", "icon-text-fit-padding", iconTextFitPadding);
-
-            QVariantList backgroundOffset;
-            backgroundOffset.append(-0.5);
-            backgroundOffset.append(-1.5);
-            m_map->setLayoutProperty("markerBackground", "text-offset", backgroundOffset);
-
-            m_map->setPaintProperty("markerBackground", "text-color", QColor("white"));
-
-            QVariantList filterExpression;
-            filterExpression.append("==");
-            filterExpression.append("$type");
-            filterExpression.append("Point");
-
-            QVariantList filter;
-            filter.append(filterExpression);
-
-            m_map->setFilter("markerArrow", filter);
-            m_map->setFilter("markerBackground", filter);
-
-            // Tilt the labels when tilting the map and make them larger
-            m_map->setLayoutProperty("road-label-large", "text-size", 30.0);
-            m_map->setLayoutProperty("road-label-large", "text-pitch-alignment", "viewport");
-
-            m_map->setLayoutProperty("road-label-medium", "text-size", 30.0);
-            m_map->setLayoutProperty("road-label-medium", "text-pitch-alignment", "viewport");
-
-            m_map->setLayoutProperty("road-label-small", "text-pitch-alignment", "viewport");
-            m_map->setLayoutProperty("road-label-small", "text-size", 30.0);
-
-            // Buildings extrusion
-            QVariantMap buildings;
-            buildings["id"] = "3d-buildings";
-            buildings["source"] = "composite";
-            buildings["source-layer"] = "building";
-            buildings["type"] = "fill-extrusion";
-            buildings["minzoom"] = 15.0;
-            m_map->addLayer(buildings);
-
-            QVariantList buildingsFilterExpression;
-            buildingsFilterExpression.append("==");
-            buildingsFilterExpression.append("extrude");
-            buildingsFilterExpression.append("true");
-
-            QVariantList buildingsFilter;
-            buildingsFilter.append(buildingsFilterExpression);
-
-            m_map->setFilter("3d-buildings", buildingsFilterExpression);
-
-            m_map->setPaintProperty("3d-buildings", "fill-extrusion-color", "#aaa");
-            m_map->setPaintProperty("3d-buildings", "fill-extrusion-opacity", .6);
-
-            QVariantMap extrusionHeight;
-            extrusionHeight["type"] = "identity";
-            extrusionHeight["property"] = "height";
-
-            m_map->setPaintProperty("3d-buildings", "fill-extrusion-height", extrusionHeight);
-
-            QVariantMap extrusionBase;
-            extrusionBase["type"] = "identity";
-            extrusionBase["property"] = "min_height";
-
-            m_map->setPaintProperty("3d-buildings", "fill-extrusion-base", extrusionBase);
-        }
-        break;
-    case Qt::Key_1: {
-            if (m_symbolAnnotationId.isNull()) {
-                QMapbox::Coordinate coordinate = m_map->coordinate();
-                QMapbox::SymbolAnnotation symbol { coordinate, "default_marker" };
-                m_map->addAnnotationIcon("default_marker", QImage(":default_marker.svg"));
-                m_symbolAnnotationId = m_map->addAnnotation(QVariant::fromValue<QMapbox::SymbolAnnotation>(symbol));
-            } else {
-                m_map->removeAnnotation(m_symbolAnnotationId.toUInt());
-                m_symbolAnnotationId.clear();
-            }
-        }
-        break;
-    case Qt::Key_2: {
-            if (m_lineAnnotationId.isNull()) {
-                QMapbox::Coordinate topLeft     = m_map->coordinateForPixel({ 0, 0 });
-                QMapbox::Coordinate bottomRight = m_map->coordinateForPixel({ qreal(size().width()), qreal(size().height()) });
-                QMapbox::CoordinatesCollections lineGeometry { { { topLeft, bottomRight } } };
-                QMapbox::ShapeAnnotationGeometry annotationGeometry { QMapbox::ShapeAnnotationGeometry::LineStringType, lineGeometry };
-                QMapbox::LineAnnotation line;
-                line.geometry = annotationGeometry;
-                line.opacity = 0.5f;
-                line.width = 1.0f;
-                line.color = Qt::red;
-                m_lineAnnotationId = m_map->addAnnotation(QVariant::fromValue<QMapbox::LineAnnotation>(line));
-            } else {
-                m_map->removeAnnotation(m_lineAnnotationId.toUInt());
-                m_lineAnnotationId.clear();
-            }
-        }
-        break;
-    case Qt::Key_3: {
-            if (m_fillAnnotationId.isNull()) {
-                QMapbox::Coordinate topLeft     = m_map->coordinateForPixel({ 0, 0 });
-                QMapbox::Coordinate topRight    = m_map->coordinateForPixel({ 0, qreal(size().height()) });
-                QMapbox::Coordinate bottomLeft  = m_map->coordinateForPixel({ qreal(size().width()), 0 });
-                QMapbox::Coordinate bottomRight = m_map->coordinateForPixel({ qreal(size().width()), qreal(size().height()) });
-                QMapbox::CoordinatesCollections fillGeometry { { { bottomLeft, bottomRight, topRight, topLeft, bottomLeft } } };
-                QMapbox::ShapeAnnotationGeometry annotationGeometry { QMapbox::ShapeAnnotationGeometry::PolygonType, fillGeometry };
-                QMapbox::FillAnnotation fill;
-                fill.geometry = annotationGeometry;
-                fill.opacity = 0.5f;
-                fill.color = Qt::green;
-                fill.outlineColor = QVariant::fromValue<QColor>(QColor(Qt::black));
-                m_fillAnnotationId = m_map->addAnnotation(QVariant::fromValue<QMapbox::FillAnnotation>(fill));
-            } else {
-                m_map->removeAnnotation(m_fillAnnotationId.toUInt());
-                m_fillAnnotationId.clear();
-            }
-        }
-        break;
-    case Qt::Key_5: {
-            if (m_map->layerExists("circleLayer")) {
-                m_map->removeLayer("circleLayer");
-                m_map->removeSource("circleSource");
-            } else {
-                QMapbox::CoordinatesCollections point { { { m_map->coordinate() } } };
-                QMapbox::Feature feature { QMapbox::Feature::PointType, point, {}, {} };
-
-                QVariantMap circleSource;
-                circleSource["type"] = "geojson";
-                circleSource["data"] = QVariant::fromValue<QMapbox::Feature>(feature);
-                m_map->addSource("circleSource", circleSource);
-
-                QVariantMap circle;
-                circle["id"] = "circleLayer";
-                circle["type"] = "circle";
-                circle["source"] = "circleSource";
-                m_map->addLayer(circle);
-
-                m_map->setPaintProperty("circleLayer", "circle-radius", 10.0);
-                m_map->setPaintProperty("circleLayer", "circle-color", QColor("black"));
-            }
-        }
-        break;
     case Qt::Key_D:
         m_map->cycleDebugOptions();
         break;
@@ -680,8 +407,6 @@ void MapboxGLMapWindow::mousePressEvent(QMouseEvent *ev)
 
 void MapboxGLMapWindow::mouseMoveEvent(QMouseEvent *ev)
 {
-    // ROS_INFO("mouseMoveEvent %g %g", m_map->pitch(), m_map->bearing());
-
 #if QT_VERSION < 0x050000
     QPointF delta = ev->posF() - m_lastPos;
 #else
@@ -729,7 +454,7 @@ void MapboxGLMapWindow::findRoute(const QMapbox::Coordinate &from, const QMapbox
 {
     ROS_INFO("Find route from %g,%g to %g,%g", from.first, from.second, to.first, to.second);
 
-    ros::ServiceClient router = nh.serviceClient<rosrm::RouteService::Request, rosrm::RouteService::Response>("/rosrm_server/route");
+    ros::ServiceClient router = m_nodeHandle.serviceClient<rosrm::RouteService::Request, rosrm::RouteService::Response>("/rosrm_server/route");
 
     rosrm::RouteService::Request request;
     rosrm::RouteService::Response response;
@@ -763,10 +488,10 @@ void MapboxGLMapWindow::findRoute(const QMapbox::Coordinate &from, const QMapbox
         routeLayer["id"] = "routeLayer";
         routeLayer["type"] = "line";
         routeLayer["source"] = "routeSource";
-        m_map->addLayer(routeLayer);
+        m_map->addLayer(routeLayer, "matchLayer");
 
         m_map->setPaintProperty("routeLayer", "line-color", QColor("#4b93d6"));
-        m_map->setPaintProperty("routeLayer", "line-width", 20.0);
+        m_map->setPaintProperty("routeLayer", "line-width", 16.0);
         m_map->setLayoutProperty("routeLayer", "line-join", "round");
         m_map->setLayoutProperty("routeLayer", "line-cap", "round");
     }
@@ -774,4 +499,118 @@ void MapboxGLMapWindow::findRoute(const QMapbox::Coordinate &from, const QMapbox
     {
         m_map->updateSource("routeSource", routeSource);
     }
+}
+
+void MapboxGLMapWindow::showMapMatching(const QMapbox::Coordinates &fixes)
+{
+    ros::ServiceClient matcher = m_nodeHandle.serviceClient<rosrm::MatchService::Request, rosrm::MatchService::Response>("/rosrm_server/match");
+
+    rosrm::MatchService::Request request;
+    rosrm::MatchService::Response response;
+
+    request.waypoints.resize(fixes.size());
+    for (std::size_t i = 0; i < fixes.size(); ++i)
+    {
+        request.waypoints[i].pose.position.x = fixes[i].second;
+        request.waypoints[i].pose.position.y = fixes[i].first;
+    }
+    request.overview = rosrm::Overview::Full;
+    request.number_of_alternatives = 0;
+
+    matcher.call(request, response);
+
+    if (response.code != "Ok")
+        return;
+
+    QMapbox::Coordinates matchGeometry;
+    for (const auto &coordinate : response.matchings[0].coordinates)
+    {
+        matchGeometry.push_back({coordinate.y, coordinate.x});
+    }
+
+    {
+        QVariantMap matchSource;
+        QMapbox::Feature matchFeature{QMapbox::Feature::LineStringType, QMapbox::CoordinatesCollections{{matchGeometry}}, {}, {}};
+        matchSource["data"] = QVariant::fromValue<QMapbox::Feature>(matchFeature);
+
+        if (!m_map->sourceExists("matchSource"))
+        {
+            matchSource["type"] = "geojson";
+            m_map->addSource("matchSource", matchSource);
+
+            QVariantMap matchLayer;
+            matchLayer["id"] = "matchLayer";
+            matchLayer["type"] = "line";
+            matchLayer["source"] = "matchSource";
+            m_map->addLayer(matchLayer);
+
+            m_map->setPaintProperty("matchLayer", "line-color", QColor("#FFB6C1"));
+            m_map->setPaintProperty("matchLayer", "line-width", 20.0);
+            m_map->setLayoutProperty("matchLayer", "line-join", "round");
+            m_map->setLayoutProperty("matchLayer", "line-cap", "round");
+        }
+        else
+        {
+            m_map->updateSource("matchSource", matchSource);
+        }
+    }
+
+    { // Place fixes points on the map
+        QVariantMap fixesSource;
+        QMapbox::Feature fixesFeature{QMapbox::Feature::PointType, QMapbox::CoordinatesCollections{{fixes}}, {}, {}};
+        fixesSource["data"] = QVariant::fromValue<QMapbox::Feature>(fixesFeature);
+
+        if (!m_map->sourceExists("fixesSource"))
+        {
+            fixesSource["type"] = "geojson";
+            m_map->addSource("fixesSource", fixesSource);
+
+            QVariantMap fixesLayer;
+            fixesLayer["id"] = "fixesLayer";
+            fixesLayer["type"] = "circle";
+            fixesLayer["source"] = "fixesSource";
+            m_map->addLayer(fixesLayer);
+
+            m_map->setPaintProperty("fixesLayer", "circle-radius", 5.);
+            m_map->setPaintProperty("fixesLayer", "circle-color", QColor("blue"));
+        }
+        else
+        {
+            m_map->updateSource("fixesSource", fixesSource);
+        }
+    }
+
+    const auto bearing = computeBearing(matchGeometry.front(), matchGeometry.back());
+
+    // { // Place car symbol on the map
+    //     QVariantMap carSource;
+    //     QMapbox::Feature carFeature{QMapbox::Feature::PointType, QMapbox::CoordinatesCollections{{{fixes.back()}}}, {}, {} };
+    //     carSource["data"] = QVariant::fromValue<QMapbox::Feature>(carFeature);
+
+    //     if (!m_map->sourceExists("carSource"))
+    //     {
+    //         carSource["type"] = "geojson";
+    //         m_map->addSource("carSource", carSource);
+
+    //         m_map->addImage("car-icon", QImage(":car-icon.svg"));
+
+    //         QVariantMap carLayer;
+    //         carLayer["id"] = "carLayer";
+    //         carLayer["type"] = "symbol";
+    //         carLayer["source"] = "carSource";
+    //         m_map->addLayer(carLayer);
+
+    //         m_map->setLayoutProperty("carLayer", "icon-image", "car-icon");
+    //         m_map->setLayoutProperty("carLayer", "icon-rotation-alignment", "map");
+    //     }
+    //     else
+    //     {
+    //         m_map->updateSource("carSource", carSource);
+    //     }
+
+    //     m_map->setLayoutProperty("carLayer", "icon-rotate", bearing);
+    //     m_map->setLayoutProperty("carLayer", "icon-size", std::pow(2., m_map->zoom() - 20.));
+    // }
+
+    flyTo(matchGeometry.back(), bearing, 500);
 }

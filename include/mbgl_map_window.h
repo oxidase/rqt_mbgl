@@ -31,7 +31,10 @@ public:
     void placeCar(const QMapbox::Coordinate &position, double bearing);
 
 public slots:
-    void flyTo(double latitude, double longitude, double bearing);
+    void jumpTo(const QMapbox::Coordinate &to, double bearing);
+    void flyTo(const QMapbox::Coordinate &to, double bearing, int duration);
+    void findRoute(const QMapbox::Coordinate &from, const QMapbox::Coordinate &to);
+    void showMapMatching(const QMapbox::Coordinates& fixes);
 
 protected slots:
     void animationValueChanged(const QVariant& value);
@@ -43,8 +46,6 @@ private:
     void resetNorth();
     void setStyle(int style);
     void toggleBuildingsExtrusion();
-    void toggleCar();
-    void findRoute(const QMapbox::Coordinate &from, const QMapbox::Coordinate &to);
 
     // QWidget implementation.
     void keyPressEvent(QKeyEvent *ev) final;
@@ -67,11 +68,9 @@ private:
     QMapboxGLCameraOptions m_mapboxGLCameraOptions;
     std::size_t m_currentStyleIndex;
 
-    ros::NodeHandle nh;
+    ros::NodeHandle m_nodeHandle;
 
     bool m_3dbuildings = false;
-
-    bool m_carVisible = false;
 
     QPointF m_lastPos;
 
@@ -81,12 +80,6 @@ private:
 
     unsigned m_animationTicks = 0;
     unsigned m_frameDraws = 0;
-
-    QVariant m_symbolAnnotationId;
-    QVariant m_lineAnnotationId;
-    QVariant m_fillAnnotationId;
-
-    bool m_sourceAdded = false;
 
     QList<QPair<QString, QString> > m_styles;
 

@@ -37,8 +37,8 @@ private:
 
     ros::NodeHandle nh;
 
-    gps_common::GPSFix previous_fix;
     ros::Subscriber extended_fix_sub;
+    QMapbox::Coordinates fixes_queue;
     void extended_fix_callback(const gps_common::GPSFix& fix);
 };
 
