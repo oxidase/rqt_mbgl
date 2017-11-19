@@ -43,6 +43,7 @@ private:
     void setStyle(std::size_t style);
     void toggleBuildingsExtrusion();
     void toggleCar();
+    void findRoute(const QMapbox::Coordinate &from, const QMapbox::Coordinate &to);
 
     // QWidget implementation.
     void keyPressEvent(QKeyEvent *ev) final;
@@ -71,7 +72,6 @@ private:
 
     QPointF m_lastPos;
 
-    std::mutex m_flyToMutex;
     QScopedPointer<QPropertyAnimation> m_latitudeAnimation;
     QScopedPointer<QPropertyAnimation> m_longitudeAnimation;
     QScopedPointer<QPropertyAnimation> m_bearingAnimation;
@@ -86,6 +86,9 @@ private:
     bool m_sourceAdded = false;
 
     QList<QPair<QString, QString> > styles;
+
+    QMapbox::Coordinate m_routeStart;
+    QMapbox::Coordinate m_routeDestination;
 
 private slots:
     void onMapChanged(QMapboxGL::MapChange change);

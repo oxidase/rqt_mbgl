@@ -14,6 +14,10 @@
 #endif
 
 #include <ros/console.h>
+#include <ros/node_handle.h>
+#include <rosrm/RouteService.h>
+#include <rosrm/MatchService.h>
+#include <rosrm/Overview.h>
 
 int kAnimationDuration = 10000;
 
@@ -37,8 +41,14 @@ MapboxGLMapWindow::MapboxGLMapWindow(const QMapboxGLSettings &settings)
 
 void MapboxGLMapWindow::flyTo(double latitude, double longitude, double bearing)
 {
-    std::lock_guard<std::mutex> lock(m_flyToMutex);
+    std::cout << "fly to " << latitude << " " <<longitude << " " << bearing << " " << m_mapboxGLCameraOptions.pitch.toDouble() << " " << m_mapboxGLCameraOptions.zoom.toDouble() << " " << m_mapboxGLCameraOptions.anchor.toPointF().x() << "," << m_mapboxGLCameraOptions.anchor.toPointF().y() <<  "\n";
+    m_mapboxGLCameraOptions.center = QVariant::fromValue(QMapbox::Coordinate(latitude, longitude));
+    m_mapboxGLCameraOptions.angle = bearing;
+    m_mapboxGLCameraOptions.zoom = m_map->zoom();
+    m_mapboxGLCameraOptions.pitch = m_map->pitch();
+    m_map->jumpTo(m_mapboxGLCameraOptions);
 
+    return ;
     if (m_latitudeAnimation) {
         m_latitudeAnimation->setDuration(kAnimationDuration);
         m_latitudeAnimation->setEndValue(latitude);
@@ -326,6 +336,13 @@ void MapboxGLMapWindow::keyPressEvent(QKeyEvent *ev)
         placeCar(m_currentCarPosition, 0);
         break;
         */
+
+    case Qt::Key_R:
+        m_routeStart = {48.295211667, 11.894606667};
+        m_routeDestination = {48.177228333, 11.589738333};
+        findRoute(m_routeStart, m_routeDestination);
+        break;
+
     case Qt::Key_T:
         flyTo(40,40,0);
         break;
@@ -627,16 +644,28 @@ void MapboxGLMapWindow::mousePressEvent(QMouseEvent *ev)
     m_lastPos = ev->localPos();
 #endif
 
-    if (ev->type() == QEvent::MouseButtonPress) {
-        if (ev->buttons() == (Qt::LeftButton | Qt::RightButton)) {
-            //changeStyle();
+    if (ev->type() == QEvent::MouseButtonPress)
+    {
+        if (ev->modifiers() & Qt::ControlModifier)
+        {
+            m_routeStart = m_map->coordinateForPixel(m_lastPos);
+            findRoute(m_routeStart, m_routeDestination);
+        }
+        else if (ev->modifiers() & Qt::MetaModifier)
+        {
+            m_routeDestination = m_map->coordinateForPixel(m_lastPos);
+            findRoute(m_routeStart, m_routeDestination);
         }
     }
 
-    if (ev->type() == QEvent::MouseButtonDblClick) {
-        if (ev->buttons() == Qt::LeftButton) {
+    if (ev->type() == QEvent::MouseButtonDblClick)
+    {
+        if (ev->buttons() == Qt::LeftButton)
+        {
             m_map->scaleBy(2.0, m_lastPos);
-        } else if (ev->buttons() == Qt::RightButton) {
+        }
+        else if (ev->buttons() == Qt::RightButton)
+        {
             m_map->scaleBy(0.5, m_lastPos);
         }
     }
@@ -689,4 +718,56 @@ void MapboxGLMapWindow::wheelEvent(QWheelEvent *ev)
 
     m_map->scaleBy(1 + factor, ev->pos());
     ev->accept();
+}
+
+void MapboxGLMapWindow::findRoute(const QMapbox::Coordinate &from, const QMapbox::Coordinate &to)
+{
+    ROS_INFO("Find route from %g,%g to %g,%g", from.first, from.second, to.first, to.second);
+
+    ros::NodeHandle nh;
+    ros::ServiceClient router = nh.serviceClient<rosrm::RouteService::Request, rosrm::RouteService::Response>("/rosrm_server/route");
+
+    rosrm::RouteService::Request request;
+    rosrm::RouteService::Response response;
+
+    request.waypoints.resize(2);
+    request.waypoints[0].position.x = from.second;
+    request.waypoints[0].position.y = from.first;
+    request.waypoints[1].position.x = to.second;
+    request.waypoints[1].position.y = to.first;
+    request.overview = rosrm::Overview::Full;
+    request.number_of_alternatives = 0;
+
+    router.call(request, response);
+
+    QMapbox::Coordinates routeGeometry;
+    for (const auto &coordinate : response.routes[0].coordinates)
+    {
+        routeGeometry.push_back({coordinate.y, coordinate.x});
+    }
+
+    QVariantMap routeSource;
+    QMapbox::Feature feature{QMapbox::Feature::LineStringType, QMapbox::CoordinatesCollections{{routeGeometry}}, {}, {}};
+    routeSource["data"] = QVariant::fromValue<QMapbox::Feature>(feature);
+
+    if (!m_map->sourceExists("routeSource"))
+    {
+        routeSource["type"] = "geojson";
+        m_map->addSource("routeSource", routeSource);
+
+        QVariantMap routeLayer;
+        routeLayer["id"] = "routeLayer";
+        routeLayer["type"] = "line";
+        routeLayer["source"] = "routeSource";
+        m_map->addLayer(routeLayer);
+
+        m_map->setPaintProperty("routeLayer", "line-color", QColor("#4b93d6"));
+        m_map->setPaintProperty("routeLayer", "line-width", 20.0);
+        m_map->setLayoutProperty("routeLayer", "line-join", "round");
+        m_map->setLayoutProperty("routeLayer", "line-cap", "round");
+    }
+    else
+    {
+        m_map->updateSource("routeSource", routeSource);
+    }
 }

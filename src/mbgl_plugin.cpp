@@ -115,12 +115,8 @@ void MapboxGLPlugin::extended_fix_callback(const gps_common::GPSFix& fix)
     const auto distance = computeDistance(fix, previous_fix);
     const auto bearing = computeBearing(fix, previous_fix);
 
-    if (distance < 10)
+    if (distance < 0.5)
         return;
-
-    std::cout << previous_fix.time << " " << fix.time << "\n";
-
-    QMetaObject::invokeMethod(widget, "flyTo", Qt::QueuedConnection, Q_ARG(double, fix.latitude), Q_ARG(double, fix.longitude), Q_ARG(double, bearing));
 
     //std::cout << "map " << map.bearing() << " " << map.latitude() << " " << map.longitude() << "\n";
     //widget->flyTo({40,40},30);
