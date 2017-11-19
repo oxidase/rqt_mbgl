@@ -28,8 +28,6 @@ public:
     void saveSettings(qt_gui_cpp::Settings &settings) const;
     void restoreSettings(const qt_gui_cpp::Settings &settings);
 
-    void placeCar(const QMapbox::Coordinate &position, double bearing);
-
 public slots:
     void jumpTo(const QMapbox::Coordinate &to, double bearing);
     void flyTo(const QMapbox::Coordinate &to, double bearing, int duration);

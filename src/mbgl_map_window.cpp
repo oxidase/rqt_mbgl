@@ -189,41 +189,6 @@ void MapboxGLMapWindow::toggleBuildingsExtrusion()
     }
 }
 
-void MapboxGLMapWindow::placeCar(const QMapbox::Coordinate &position, double bearing)
-{
-    QMapbox::CoordinatesCollections point { { { position } } };
-    QMapbox::Feature carPoint { QMapbox::Feature::PointType, point, {}, {} };
-
-    QVariantMap carPosition;
-    carPosition["data"] = QVariant::fromValue<QMapbox::Feature>(carPoint);
-    if (!m_map->sourceExists("carPosition"))
-    {
-        carPosition["type"] = "geojson";
-        m_map->addSource("carPosition", carPosition);
-    }
-    else
-    {
-        m_map->updateSource("carPosition", carPosition);
-    }
-
-    if (!m_map->layerExists("carSymbol"))
-    {
-        m_map->addImage("car-icon", QImage(":car-icon.svg"));
-
-        QVariantMap carSymbol;
-        carSymbol["id"] = "carSymbol";
-        carSymbol["type"] = "symbol";
-        carSymbol["source"] = "carPosition";
-        m_map->addLayer(carSymbol);
-
-        m_map->setLayoutProperty("carSymbol", "icon-image", "car-icon");
-        m_map->setLayoutProperty("carSymbol", "icon-rotation-alignment", "map");
-    }
-
-    m_map->setLayoutProperty("carSymbol", "icon-rotate", bearing);
-    m_map->setLayoutProperty("carSymbol", "icon-size", std::pow(2., m_map->zoom() - 18.));
-}
-
 void MapboxGLMapWindow::initializeGL()
 {
     ROS_INFO("initializeGL");

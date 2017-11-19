@@ -1,6 +1,8 @@
-# Building and setup
+Mapbox GL native demo plugin for rqt
 
-## Build mapbox-gl-native
+## Building and setup
+
+### Build mapbox-gl-native
 
 Required development packages and setting up of Mapbox GL Native is described at https://github.com/mapbox/mapbox-gl-native/blob/master/INSTALL.md
 
@@ -15,7 +17,7 @@ cmake .. -DMBGL_PLATFORM=qt
 make -j4
 ```
 
-## Build rqt_mbgl
+### Build rqt_mbgl
 
 In the ROS workspace directory
 ```
@@ -26,7 +28,7 @@ catkin_make --force-cmake --cmake-args -DMAPBOX_GL_PATH=$HOME/mapbox-gl-native
 ```
 
 
-## Setup access to vector tiles
+### Setup access to vector tiles
 
 To use the plugin you need to [sign up to Mapbox](https://www.mapbox.com/signup/),
 got to your [API access tokens page](https://www.mapbox.com/studio/account/tokens/)
