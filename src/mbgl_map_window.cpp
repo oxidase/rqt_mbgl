@@ -1,4 +1,4 @@
-#include <mbgl_map_window.h>
+#include "mbgl_map_window.h"
 
 #include <QApplication>
 #include <QColor>

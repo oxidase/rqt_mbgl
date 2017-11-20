@@ -1,14 +1,12 @@
 #ifndef RQT_MBGL_MAPBOX_GL_PLUGIN_H
 #define RQT_MBGL_MAPBOX_GL_PLUGIN_H
 
-#include <mbgl_map_window.h>
+#include "mbgl_map_window.h"
 
 #include <rqt_gui_cpp/plugin.h>
 
 #include <ros/node_handle.h>
 #include <gps_common/GPSFix.h>
-
-#include <mutex>
 
 namespace rqt_mbgl
 {

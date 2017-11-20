@@ -1,5 +1,4 @@
-#include <mbgl_plugin.h>
-#include <mbgl_map_window.h>
+#include "mbgl_plugin.h"
 
 #include <pluginlib/class_list_macros.h>
 

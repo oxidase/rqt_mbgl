@@ -124,8 +124,8 @@ set (rqt_mbgl_SRCS
 )
 
 set(rqt_mbgl_HDRS
-  include/mbgl_map_window.h
-  include/mbgl_plugin.h
+  src/mbgl_map_window.h
+  src/mbgl_plugin.h
 )
 
 set(rqt_mbgl_UIS
@@ -167,7 +167,6 @@ set_target_properties(qmapboxgl PROPERTIES
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-  include
   ${CMAKE_CURRENT_BINARY_DIR}/..
   ${catkin_INCLUDE_DIRS}
 )
