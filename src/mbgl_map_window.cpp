@@ -52,6 +52,9 @@ double computeBearing(const QMapbox::Coordinate& from, const QMapbox::Coordinate
 }
 }
 
+namespace rqt_mbgl
+{
+
 MapboxGLMapWindow::MapboxGLMapWindow(const QMapboxGLSettings &settings)
     : m_map(nullptr)
     , m_mapboxGLSettings(settings)
@@ -466,18 +469,20 @@ void MapboxGLMapWindow::findRoute(const QMapbox::Coordinate &from, const QMapbox
     }
 }
 
-void MapboxGLMapWindow::showMapMatching(const QMapbox::Coordinates &fixes)
+void MapboxGLMapWindow::showMapMatching(const GPSFixes &fixes)
 {
     ros::ServiceClient matcher = m_nodeHandle.serviceClient<rosrm::MatchService::Request, rosrm::MatchService::Response>("/rosrm_server/match");
 
+    QMapbox::Coordinates coordinates;
     rosrm::MatchService::Request request;
     rosrm::MatchService::Response response;
 
     request.waypoints.resize(fixes.size());
     for (std::size_t i = 0; i < fixes.size(); ++i)
     {
-        request.waypoints[i].pose.position.x = fixes[i].second;
-        request.waypoints[i].pose.position.y = fixes[i].first;
+        request.waypoints[i].pose.position.x = fixes[i].longitude;
+        request.waypoints[i].pose.position.y = fixes[i].latitude;
+        coordinates.push_back({fixes[i].latitude, fixes[i].longitude});
     }
     request.overview = rosrm::Overview::Full;
     request.number_of_alternatives = 0;
@@ -522,7 +527,7 @@ void MapboxGLMapWindow::showMapMatching(const QMapbox::Coordinates &fixes)
 
     { // Place fixes points on the map
         QVariantMap fixesSource;
-        QMapbox::Feature fixesFeature{QMapbox::Feature::PointType, QMapbox::CoordinatesCollections{{fixes}}, {}, {}};
+        QMapbox::Feature fixesFeature{QMapbox::Feature::PointType, QMapbox::CoordinatesCollections{{coordinates}}, {}, {}};
         fixesSource["data"] = QVariant::fromValue<QMapbox::Feature>(fixesFeature);
 
         if (!m_map->sourceExists("fixesSource"))
@@ -578,4 +583,6 @@ void MapboxGLMapWindow::showMapMatching(const QMapbox::Coordinates &fixes)
     // }
 
     flyTo(matchGeometry.back(), bearing, 500);
+}
+
 }

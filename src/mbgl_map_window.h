@@ -9,14 +9,20 @@
 
 #include <QMapboxGL>
 
-#include <ros/node_handle.h>
+#include <gps_common/GPSFix.h>
 #include <qt_gui_cpp/settings.h>
+#include <ros/node_handle.h>
 
 #include <mutex>
 
 class QKeyEvent;
 class QMouseEvent;
 class QWheelEvent;
+
+namespace rqt_mbgl
+{
+
+typedef QList<gps_common::GPSFix> GPSFixes;
 
 class MapboxGLMapWindow : public QOpenGLWidget
 {
@@ -32,7 +38,7 @@ public slots:
     void jumpTo(const QMapbox::Coordinate &to, double bearing);
     void flyTo(const QMapbox::Coordinate &to, double bearing, int duration);
     void findRoute(const QMapbox::Coordinate &from, const QMapbox::Coordinate &to);
-    void showMapMatching(const QMapbox::Coordinates& fixes);
+    void showMapMatching(const rqt_mbgl::GPSFixes& fixes);
 
 protected slots:
     void animationValueChanged(const QVariant& value);
@@ -87,5 +93,10 @@ private:
 private slots:
     void onMapChanged(QMapboxGL::MapChange change);
 };
+
+}
+
+Q_DECLARE_METATYPE(gps_common::GPSFix);
+Q_DECLARE_METATYPE(rqt_mbgl::GPSFixes);
 
 #endif

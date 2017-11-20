@@ -15,7 +15,8 @@ MapboxGLPlugin::MapboxGLPlugin()
     std::cout << "MapboxGLPlugin" << "\n";
     setObjectName("MapboxGLPlugin");
 
-    qRegisterMetaType<QMapbox::Coordinates>();
+    qRegisterMetaType<gps_common::GPSFix>();
+    qRegisterMetaType<rqt_mbgl::GPSFixes>();
 }
 
 void MapboxGLPlugin::initPlugin(qt_gui_cpp::PluginContext& context)
@@ -79,11 +80,11 @@ void MapboxGLPlugin::triggerConfiguration()
 
 void MapboxGLPlugin::extended_fix_callback(const gps_common::GPSFix& fix)
 {
-    fixes_queue.push_back({fix.latitude, fix.longitude});
+    fixes_queue.push_back(fix);
     if (fixes_queue.size() > 10)
         fixes_queue.pop_front();
 
-    QMetaObject::invokeMethod(widget, "showMapMatching", Qt::QueuedConnection, Q_ARG(QMapbox::Coordinates, fixes_queue));
+    QMetaObject::invokeMethod(widget, "showMapMatching", Qt::QueuedConnection, Q_ARG(rqt_mbgl::GPSFixes, fixes_queue));
 }
 
 }  // namespace rqt_mbgl

@@ -31,12 +31,12 @@ public:
 private:
     // Here is a naked pointer with a potential memory leak to prevent Python error
     // RuntimeError: wrapped C/C++ object of type WindowChangedSignaler has been deleted
-    MapboxGLMapWindow *widget;
+    rqt_mbgl::MapboxGLMapWindow *widget;
 
     ros::NodeHandle nh;
 
+    GPSFixes fixes_queue;
     ros::Subscriber extended_fix_sub;
-    QMapbox::Coordinates fixes_queue;
     void extended_fix_callback(const gps_common::GPSFix& fix);
 };
 
