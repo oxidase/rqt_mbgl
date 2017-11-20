@@ -17,6 +17,7 @@
 #include <rosrm/RouteService.h>
 #include <rosrm/MatchService.h>
 #include <rosrm/Overview.h>
+#include <tf/transform_datatypes.h>
 
 const QString layer3Dbuildings = QString::fromLatin1("3d-buildings");
 
@@ -482,8 +483,10 @@ void MapboxGLMapWindow::showMapMatching(const GPSFixes &fixes)
     {
         request.waypoints[i].pose.position.x = fixes[i].longitude;
         request.waypoints[i].pose.position.y = fixes[i].latitude;
+        request.waypoints[i].pose.orientation = tf::createQuaternionMsgFromYaw(M_PI * fixes[i].track / 180.);
         coordinates.push_back({fixes[i].latitude, fixes[i].longitude});
     }
+
     request.overview = rosrm::Overview::Full;
     request.number_of_alternatives = 0;
 
@@ -582,7 +585,7 @@ void MapboxGLMapWindow::showMapMatching(const GPSFixes &fixes)
     //     m_map->setLayoutProperty("carLayer", "icon-size", std::pow(2., m_map->zoom() - 20.));
     // }
 
-    flyTo(matchGeometry.back(), bearing, 500);
+    flyTo(matchGeometry.back(), fixes.back().track, 500);
 }
 
 }
